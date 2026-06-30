@@ -18,6 +18,7 @@ from ucapi import RequestUserInput
 from ucapi_framework import BaseSetupFlow
 
 from uc_intg_whisker.config import WhiskerConfig
+from uc_intg_whisker.device import build_robot_meta
 
 _LOG = logging.getLogger(__name__)
 
@@ -100,12 +101,19 @@ class WhiskerSetupFlow(BaseSetupFlow[WhiskerConfig]):
                 else "Whisker Litter-Robot"
             )
 
-            _LOG.info("Whisker account validated - %d robot(s)", len(robots))
+            robot_metas = [m for m in (build_robot_meta(r) for r in robots) if m]
+
+            _LOG.info(
+                "Whisker account validated - %d robot(s): %s",
+                len(robot_metas),
+                ", ".join(f"{m['name']} ({m['kind']})" for m in robot_metas),
+            )
             return WhiskerConfig(
                 identifier=identifier,
                 name=name,
                 username=username,
                 password=password,
+                robots=robot_metas,
             )
         finally:
             try:

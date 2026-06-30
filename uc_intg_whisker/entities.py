@@ -112,9 +112,15 @@ def _feeder_entities(cfg, dev, meta) -> list[Entity]:
 def build_entities(
     device_config: WhiskerConfig, device: WhiskerDevice
 ) -> list[Entity]:
-    """Create model-appropriate entities for every robot on the account."""
+    """Create model-appropriate entities for every robot on the account.
+
+    Reads the robot metadata persisted in the config (not the live device), so
+    entities can be created immediately on startup before the cloud connection
+    is established. This is what makes entities survive a Remote reboot.
+    """
+    metas = device_config.robots or []
     entities: list[Entity] = []
-    for meta in device.robot_metas:
+    for meta in metas:
         kind = meta["kind"]
         if kind == "feeder":
             entities.extend(_feeder_entities(device_config, device, meta))
@@ -123,7 +129,5 @@ def build_entities(
                 _litter_entities(device_config, device, meta, is_lr4=(kind == "lr4"))
             )
 
-    _LOG.info(
-        "Built %d entities for %d robot(s)", len(entities), len(device.robot_metas)
-    )
+    _LOG.info("Built %d entities for %d robot(s)", len(entities), len(metas))
     return entities

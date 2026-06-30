@@ -26,5 +26,9 @@ class WhiskerDriver(BaseIntegrationDriver[WhiskerDevice, WhiskerConfig]):
                 lambda cfg, dev: build_entities(cfg, dev),
             ],
             driver_id="whisker",
-            require_connection_before_registry=True,
+            # Entities are built from persisted config.robots, so they can be
+            # registered before connecting. This is required for the Remote to
+            # re-subscribe successfully after a reboot (entities available
+            # immediately); live state flows in via sync_state() once connected.
+            require_connection_before_registry=False,
         )

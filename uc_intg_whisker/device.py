@@ -44,6 +44,33 @@ def _robot_kind(robot: Any) -> str | None:
     return None
 
 
+def robot_key(robot: Any) -> str:
+    """Stable entity-id-safe key for a robot."""
+    return str(robot.id).replace(".", "_").replace(" ", "_")
+
+
+def build_robot_meta(robot: Any) -> dict[str, Any] | None:
+    """Build the persisted metadata dict for a robot, or None if unsupported.
+
+    Shared by the setup flow (to persist into config) and the device (so the
+    entity factory can create entities from config without a live connection).
+    """
+    kind = _robot_kind(robot)
+    if kind is None:
+        return None
+    default_name = "Feeder-Robot" if kind == KIND_FEEDER else "Litter-Robot"
+    return {
+        "key": robot_key(robot),
+        "kind": kind,
+        "name": robot.name or default_name,
+        "model": getattr(robot, "model", "") or "",
+        "valid_wait_times": list(
+            getattr(type(robot), "VALID_WAIT_TIMES", DEFAULT_WAIT_TIMES)
+        ),
+        "valid_meal_sizes": list(getattr(type(robot), "VALID_MEAL_INSERT_SIZES", [])),
+    }
+
+
 class WhiskerDevice(PollingDevice):
     """Whisker account implementation using PollingDevice."""
 
@@ -51,6 +78,7 @@ class WhiskerDevice(PollingDevice):
         super().__init__(device_config, poll_interval=POLL_INTERVAL, **kwargs)
         self._device_config = device_config
         self._connect_lock: asyncio.Lock = asyncio.Lock()
+        self._lifecycle_lock: asyncio.Lock = asyncio.Lock()
         self._ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 
         self._account: Account | None = None
@@ -90,6 +118,12 @@ class WhiskerDevice(PollingDevice):
     # Connection lifecycle
     # ------------------------------------------------------------------
 
+    async def connect(self) -> bool:
+        # Serialize the framework's concurrent connect() calls (device-added +
+        # subscribe + r2-connect paths) so only one poll loop is ever started.
+        async with self._lifecycle_lock:
+            return await super().connect()
+
     async def establish_connection(self) -> None:
         async with self._connect_lock:
             if self._account is None:
@@ -114,9 +148,24 @@ class WhiskerDevice(PollingDevice):
 
             self._snapshot()
             self._state = "ON"
+            self._persist_robot_metas()
             _LOG.info(
                 "[%s] Connected - %d Litter-Robot(s)", self.log_id, len(self._robots)
             )
+        # Push immediately so subscribed entities sync the moment we connect
+        # (coordinator contract) instead of waiting for the first poll.
+        self.push_update()
+
+    def _persist_robot_metas(self) -> None:
+        """Keep config.robots in sync with discovered robots (self-heals upgrades
+        and reflects added/removed robots) so entities survive the next reboot."""
+        current = list(getattr(self._device_config, "robots", []) or [])
+        if self.robot_metas and self.robot_metas != current:
+            try:
+                self.update_config(robots=self.robot_metas)
+                _LOG.info("[%s] Persisted robot metadata", self.log_id)
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                _LOG.debug("[%s] Could not persist robot metadata: %s", self.log_id, err)
 
     async def poll_device(self) -> None:
         if self._account is None:
@@ -162,34 +211,15 @@ class WhiskerDevice(PollingDevice):
     # Robot discovery and state snapshots
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _robot_key(robot: Any) -> str:
-        return str(robot.id).replace(".", "_").replace(" ", "_")
-
     def _build_robots(self) -> None:
         robots: dict[str, Any] = {}
         metas: list[dict[str, Any]] = []
         for robot in self._account.robots:
-            kind = _robot_kind(robot)
-            if kind is None:
+            meta = build_robot_meta(robot)
+            if meta is None:
                 continue
-            key = self._robot_key(robot)
-            robots[key] = robot
-            default_name = "Feeder-Robot" if kind == KIND_FEEDER else "Litter-Robot"
-            metas.append(
-                {
-                    "key": key,
-                    "kind": kind,
-                    "name": robot.name or default_name,
-                    "model": getattr(robot, "model", "") or "",
-                    "valid_wait_times": list(
-                        getattr(type(robot), "VALID_WAIT_TIMES", DEFAULT_WAIT_TIMES)
-                    ),
-                    "valid_meal_sizes": list(
-                        getattr(type(robot), "VALID_MEAL_INSERT_SIZES", [])
-                    ),
-                }
-            )
+            robots[meta["key"]] = robot
+            metas.append(meta)
         self._robots = robots
         self.robot_metas = metas
 
