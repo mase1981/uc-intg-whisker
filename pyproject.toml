@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=65.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uc-intg-whisker"
+description = "Whisker Litter-Robot integration for Unfolded Circle Remote"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MPL-2.0"}
+authors = [
+    {name = "Meir Miyara", email = "meir.miyara@gmail.com"}
+]
+keywords = ["unfoldedcircle", "integration", "whisker", "litter-robot", "litterrobot"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Home Automation",
+]
+dependencies = [
+    "ucapi-framework>=1.9.5",
+    "ucapi>=0.7.0",
+    "pylitterbot>=2025.5.0",
+    "certifi>=2024.0.0",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/mase1981/uc-intg-whisker"
+Repository = "https://github.com/mase1981/uc-intg-whisker"
+Issues = "https://github.com/mase1981/uc-intg-whisker/issues"
+
+[tool.setuptools]
+packages = ["uc_intg_whisker"]
+
+[tool.setuptools.dynamic]
+version = {attr = "uc_intg_whisker.__version__"}
+
+[project.scripts]
+uc-intg-whisker = "uc_intg_whisker:main"

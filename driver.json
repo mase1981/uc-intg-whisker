@@ -1,0 +1,39 @@
+{
+  "driver_id": "whisker",
+  "version": "1.0.0",
+  "min_core_api": "0.22.0",
+  "name": {
+    "en": "Whisker Litter-Robot"
+  },
+  "icon": "uc:integration",
+  "description": {
+    "en": "Integration for Whisker Litter-Robot smart litter boxes with status, waste drawer and litter level sensors, night light, panel lock and power switches, clean cycle and reset buttons, and clean cycle wait time selection"
+  },
+  "developer": {
+    "name": "Meir Miyara",
+    "email": "meir.miyara@gmail.com",
+    "url": "https://github.com/mase1981"
+  },
+  "home_page": "https://github.com/mase1981/uc-intg-whisker",
+  "release_date": "2026-06-30",
+  "setup_data_schema": {
+    "title": {
+      "en": "Whisker Litter-Robot Setup"
+    },
+    "settings": [
+      {
+        "id": "info",
+        "label": {
+          "en": "Setup information"
+        },
+        "field": {
+          "label": {
+            "value": {
+              "en": "Enter the email and password for your Whisker (Litter-Robot) account on the next screen. All Litter-Robots on the account will be added automatically."
+            }
+          }
+        }
+      }
+    ]
+  }
+}
