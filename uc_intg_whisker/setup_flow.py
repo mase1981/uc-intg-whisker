@@ -50,7 +50,7 @@ class WhiskerSetupFlow(BaseSetupFlow[WhiskerConfig]):
                 {
                     "id": "password",
                     "label": {"en": "Password"},
-                    "field": {"text": {"value": ""}},
+                    "field": {"password": {"value": ""}},
                 },
             ],
         )

@@ -286,6 +286,13 @@ class WhiskerDevice(PollingDevice):
         )
 
     async def set_night_light(self, key: str, on: bool) -> bool:
+        robot = self._robots.get(key)
+        # Litter-Robot 4 has no set_night_light(); it only honors the mode command.
+        if isinstance(robot, LitterRobot4):
+            mode = NightLightMode.ON if on else NightLightMode.OFF
+            return await self._command(
+                key, lambda r: r.set_night_light_mode(mode), "set_night_light"
+            )
         return await self._command(
             key, lambda r: r.set_night_light(on), "set_night_light"
         )
