@@ -49,6 +49,28 @@ def robot_key(robot: Any) -> str:
     return str(robot.id).replace(".", "_").replace(" ", "_")
 
 
+async def discover_robot_metas(username: str, password: str) -> list[dict[str, Any]]:
+    """Connect to the Whisker cloud and return persisted metadata for every robot.
+
+    Used by the setup flow and by startup config migration so entities can be
+    built from config without a live device connection.
+    """
+    ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+    connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+    session = aiohttp.ClientSession(connector=connector)
+    account = Account(websession=session)
+    try:
+        await account.connect(username=username, password=password, load_robots=True)
+        return [m for m in (build_robot_meta(r) for r in account.robots) if m]
+    finally:
+        try:
+            await account.disconnect()
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+        if not session.closed:
+            await session.close()
+
+
 def build_robot_meta(robot: Any) -> dict[str, Any] | None:
     """Build the persisted metadata dict for a robot, or None if unsupported.
 
