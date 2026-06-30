@@ -14,10 +14,12 @@ from ucapi import StatusCodes, select
 from ucapi_framework import SelectEntity
 
 from uc_intg_whisker.const import (
+    BRIGHTNESS_FROM_ENUM,
+    BRIGHTNESS_TO_ENUM,
+    BRIGHTNESS_VALUE_TO_NAME,
+    MEAL_INSERT_SIZE_LABELS,
     NIGHT_LIGHT_MODE_FROM_ENUM,
     NIGHT_LIGHT_MODE_TO_ENUM,
-    PANEL_BRIGHTNESS_FROM_ENUM,
-    PANEL_BRIGHTNESS_TO_ENUM,
     WAIT_TIME_SUFFIX,
 )
 
@@ -163,11 +165,11 @@ class PanelBrightnessSelect(SelectEntity):
         if self._device.state == "UNAVAILABLE" or snap is None or not snap["online"]:
             self.update({select.Attributes.STATE: select.States.UNAVAILABLE})
             return
-        current = PANEL_BRIGHTNESS_FROM_ENUM.get(snap.get("panel_brightness") or "", "")
+        current = BRIGHTNESS_FROM_ENUM.get(snap.get("panel_brightness") or "", "")
         self.update(
             {
                 select.Attributes.STATE: select.States.ON,
-                select.Attributes.OPTIONS: list(PANEL_BRIGHTNESS_TO_ENUM.keys()),
+                select.Attributes.OPTIONS: list(BRIGHTNESS_TO_ENUM.keys()),
                 select.Attributes.CURRENT_OPTION: current,
             }
         )
@@ -178,8 +180,112 @@ class PanelBrightnessSelect(SelectEntity):
         if cmd_id != select.Commands.SELECT_OPTION:
             return StatusCodes.NOT_IMPLEMENTED
         option = params.get("option", "") if params else ""
-        enum_name = PANEL_BRIGHTNESS_TO_ENUM.get(option)
+        enum_name = BRIGHTNESS_TO_ENUM.get(option)
         if not enum_name:
             return StatusCodes.BAD_REQUEST
         ok = await self._device.set_panel_brightness(self._key, enum_name)
+        return StatusCodes.OK if ok else StatusCodes.SERVER_ERROR
+
+
+class NightLightBrightnessSelect(SelectEntity):
+    """Night light brightness (Low / Medium / High) for Litter-Robot 4."""
+
+    def __init__(
+        self, device_config: WhiskerConfig, device: WhiskerDevice, meta: dict[str, Any]
+    ) -> None:
+        self._device = device
+        self._key = meta["key"]
+        entity_id = f"select.{device_config.identifier}.{self._key}_night_light_brightness"
+        super().__init__(
+            entity_id,
+            f"{meta['name']} Night Light Brightness",
+            {
+                select.Attributes.STATE: select.States.UNKNOWN,
+                select.Attributes.OPTIONS: [],
+                select.Attributes.CURRENT_OPTION: "",
+            },
+            cmd_handler=self._handle_command,
+        )
+        self.subscribe_to_device(device)
+
+    async def sync_state(self) -> None:
+        snap = self._device.robot_snapshot(self._key)
+        if self._device.state == "UNAVAILABLE" or snap is None or not snap["online"]:
+            self.update({select.Attributes.STATE: select.States.UNAVAILABLE})
+            return
+        current = BRIGHTNESS_VALUE_TO_NAME.get(snap.get("night_light_brightness"), "")
+        self.update(
+            {
+                select.Attributes.STATE: select.States.ON,
+                select.Attributes.OPTIONS: list(BRIGHTNESS_TO_ENUM.keys()),
+                select.Attributes.CURRENT_OPTION: current,
+            }
+        )
+
+    async def _handle_command(
+        self, entity: select.Select, cmd_id: str, params: dict[str, Any] | None
+    ) -> StatusCodes:
+        if cmd_id != select.Commands.SELECT_OPTION:
+            return StatusCodes.NOT_IMPLEMENTED
+        option = params.get("option", "") if params else ""
+        enum_name = BRIGHTNESS_TO_ENUM.get(option)
+        if not enum_name:
+            return StatusCodes.BAD_REQUEST
+        ok = await self._device.set_night_light_brightness(self._key, enum_name)
+        return StatusCodes.OK if ok else StatusCodes.SERVER_ERROR
+
+
+class MealInsertSizeSelect(SelectEntity):
+    """Meal insert size selection for a Feeder-Robot."""
+
+    def __init__(
+        self, device_config: WhiskerConfig, device: WhiskerDevice, meta: dict[str, Any]
+    ) -> None:
+        self._device = device
+        self._key = meta["key"]
+        self._sizes = [float(s) for s in meta["valid_meal_sizes"]] or list(
+            MEAL_INSERT_SIZE_LABELS.keys()
+        )
+        entity_id = f"select.{device_config.identifier}.{self._key}_meal_size"
+        super().__init__(
+            entity_id,
+            f"{meta['name']} Meal Insert Size",
+            {
+                select.Attributes.STATE: select.States.UNKNOWN,
+                select.Attributes.OPTIONS: [],
+                select.Attributes.CURRENT_OPTION: "",
+            },
+            cmd_handler=self._handle_command,
+        )
+        self.subscribe_to_device(device)
+
+    def _label(self, size: float) -> str:
+        return MEAL_INSERT_SIZE_LABELS.get(size, f"{size} cup")
+
+    async def sync_state(self) -> None:
+        snap = self._device.robot_snapshot(self._key)
+        if self._device.state == "UNAVAILABLE" or snap is None or not snap["online"]:
+            self.update({select.Attributes.STATE: select.States.UNAVAILABLE})
+            return
+        size = snap.get("meal_insert_size")
+        options = [self._label(s) for s in self._sizes]
+        current = self._label(size) if size in self._sizes else ""
+        self.update(
+            {
+                select.Attributes.STATE: select.States.ON,
+                select.Attributes.OPTIONS: options,
+                select.Attributes.CURRENT_OPTION: current,
+            }
+        )
+
+    async def _handle_command(
+        self, entity: select.Select, cmd_id: str, params: dict[str, Any] | None
+    ) -> StatusCodes:
+        if cmd_id != select.Commands.SELECT_OPTION:
+            return StatusCodes.NOT_IMPLEMENTED
+        option = params.get("option", "") if params else ""
+        size = next((s for s in self._sizes if self._label(s) == option), None)
+        if size is None:
+            return StatusCodes.BAD_REQUEST
+        ok = await self._device.set_meal_insert_size(self._key, size)
         return StatusCodes.OK if ok else StatusCodes.SERVER_ERROR

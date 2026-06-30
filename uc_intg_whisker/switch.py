@@ -109,3 +109,12 @@ class SleepModeSwitch(_WhiskerSwitch):
 
     async def _apply(self, on: bool) -> bool:
         return await self._device.set_sleep_mode(self._key, on)
+
+
+class GravityModeSwitch(_WhiskerSwitch):
+    _suffix = "gravity_mode"
+    _label = "Gravity Mode"
+    _field = "gravity_mode"
+
+    async def _apply(self, on: bool) -> bool:
+        return await self._device.set_gravity_mode(self._key, on)

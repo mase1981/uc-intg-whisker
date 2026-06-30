@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 import aiohttp
 import certifi
-from pylitterbot import Account, LitterRobot3, LitterRobot4
+from pylitterbot import Account, FeederRobot, LitterRobot3, LitterRobot4
 from pylitterbot.enums import BrightnessLevel, NightLightMode
 from ucapi_framework import DeviceEvents, PollingDevice
 
@@ -27,7 +27,21 @@ from uc_intg_whisker.const import DEFAULT_WAIT_TIMES, POLL_INTERVAL
 
 _LOG = logging.getLogger(__name__)
 
-_LITTER_ROBOT_TYPES = (LitterRobot3, LitterRobot4)
+_SUPPORTED_TYPES = (LitterRobot3, LitterRobot4, FeederRobot)
+
+KIND_LR3 = "lr3"
+KIND_LR4 = "lr4"
+KIND_FEEDER = "feeder"
+
+
+def _robot_kind(robot: Any) -> str | None:
+    if isinstance(robot, LitterRobot4):
+        return KIND_LR4
+    if isinstance(robot, LitterRobot3):
+        return KIND_LR3
+    if isinstance(robot, FeederRobot):
+        return KIND_FEEDER
+    return None
 
 
 class WhiskerDevice(PollingDevice):
@@ -152,28 +166,27 @@ class WhiskerDevice(PollingDevice):
     def _robot_key(robot: Any) -> str:
         return str(robot.id).replace(".", "_").replace(" ", "_")
 
-    @staticmethod
-    def _is_litter_robot(robot: Any) -> bool:
-        return isinstance(robot, _LITTER_ROBOT_TYPES)
-
     def _build_robots(self) -> None:
         robots: dict[str, Any] = {}
         metas: list[dict[str, Any]] = []
         for robot in self._account.robots:
-            if not self._is_litter_robot(robot):
+            kind = _robot_kind(robot)
+            if kind is None:
                 continue
             key = self._robot_key(robot)
             robots[key] = robot
+            default_name = "Feeder-Robot" if kind == KIND_FEEDER else "Litter-Robot"
             metas.append(
                 {
                     "key": key,
-                    "name": robot.name or "Litter-Robot",
+                    "kind": kind,
+                    "name": robot.name or default_name,
                     "model": getattr(robot, "model", "") or "",
-                    "is_lr4": isinstance(robot, LitterRobot4),
-                    "has_litter_level": isinstance(robot, LitterRobot4),
-                    "has_reset": hasattr(robot, "reset_waste_drawer"),
                     "valid_wait_times": list(
                         getattr(type(robot), "VALID_WAIT_TIMES", DEFAULT_WAIT_TIMES)
+                    ),
+                    "valid_meal_sizes": list(
+                        getattr(type(robot), "VALID_MEAL_INSERT_SIZES", [])
                     ),
                 }
             )
@@ -222,35 +235,61 @@ class WhiskerDevice(PollingDevice):
         except (AttributeError, ValueError):
             return str(value)
 
+    @staticmethod
+    def _feeding_time(value: Any) -> str | None:
+        if not value:
+            return None
+        if isinstance(value, dict):
+            value = value.get("timestamp")
+        return WhiskerDevice._fmt_datetime(value)
+
     def _snapshot(self) -> None:
         states: dict[str, dict[str, Any]] = {}
         for key, robot in self._robots.items():
-            is_lr4 = isinstance(robot, LitterRobot4)
-            states[key] = {
+            kind = _robot_kind(robot)
+            snap: dict[str, Any] = {
+                "kind": kind,
                 "online": bool(getattr(robot, "is_online", True)),
-                "status_text": self._status_text(robot),
-                "waste_level": self._round(getattr(robot, "waste_drawer_level", None)),
-                "litter_level": self._round(getattr(robot, "litter_level", None))
-                if is_lr4
-                else None,
-                "cycle_count": getattr(robot, "cycle_count", None),
-                "sleep_mode": bool(getattr(robot, "sleep_mode_enabled", False)),
-                "is_sleeping": bool(getattr(robot, "is_sleeping", False)),
-                "night_light": bool(getattr(robot, "night_light_mode_enabled", False)),
-                "night_light_mode": self._enum_name(getattr(robot, "night_light_mode", None))
-                if is_lr4
-                else None,
-                "panel_brightness": self._enum_name(getattr(robot, "panel_brightness", None))
-                if is_lr4
-                else None,
-                "panel_lock": bool(getattr(robot, "panel_lock_enabled", False)),
                 "power": bool(getattr(robot, "is_on", False)),
-                "waste_full": bool(getattr(robot, "is_waste_drawer_full", False)),
-                "wait_time": getattr(robot, "clean_cycle_wait_time_minutes", None),
-                "sleep_start": self._fmt_time(getattr(robot, "sleep_mode_start_time", None)),
-                "sleep_end": self._fmt_time(getattr(robot, "sleep_mode_end_time", None)),
-                "last_seen": self._fmt_datetime(getattr(robot, "last_seen", None)),
+                "night_light": bool(getattr(robot, "night_light_mode_enabled", False)),
+                "panel_lock": bool(getattr(robot, "panel_lock_enabled", False)),
             }
+            if kind in (KIND_LR3, KIND_LR4):
+                snap.update(
+                    {
+                        "status_text": self._status_text(robot),
+                        "waste_level": self._round(getattr(robot, "waste_drawer_level", None)),
+                        "cycle_count": getattr(robot, "cycle_count", None),
+                        "sleep_mode": bool(getattr(robot, "sleep_mode_enabled", False)),
+                        "is_sleeping": bool(getattr(robot, "is_sleeping", False)),
+                        "sleep_start": self._fmt_time(getattr(robot, "sleep_mode_start_time", None)),
+                        "sleep_end": self._fmt_time(getattr(robot, "sleep_mode_end_time", None)),
+                        "wait_time": getattr(robot, "clean_cycle_wait_time_minutes", None),
+                        "last_seen": self._fmt_datetime(getattr(robot, "last_seen", None)),
+                    }
+                )
+            if kind == KIND_LR4:
+                snap.update(
+                    {
+                        "litter_level": self._round(getattr(robot, "litter_level", None)),
+                        "pet_weight": getattr(robot, "pet_weight", None),
+                        "hopper_status": self._enum_name(getattr(robot, "hopper_status", None)),
+                        "night_light_mode": self._enum_name(getattr(robot, "night_light_mode", None)),
+                        "night_light_brightness": getattr(robot, "night_light_brightness", None),
+                        "panel_brightness": self._enum_name(getattr(robot, "panel_brightness", None)),
+                    }
+                )
+            if kind == KIND_FEEDER:
+                snap.update(
+                    {
+                        "food_level": self._round(getattr(robot, "food_level", None)),
+                        "last_feeding": self._feeding_time(getattr(robot, "last_feeding", None)),
+                        "next_feeding": self._fmt_datetime(getattr(robot, "next_feeding", None)),
+                        "gravity_mode": bool(getattr(robot, "gravity_mode_enabled", False)),
+                        "meal_insert_size": getattr(robot, "meal_insert_size", None),
+                    }
+                )
+            states[key] = snap
         self._robot_state = states
 
     # ------------------------------------------------------------------
@@ -284,6 +323,9 @@ class WhiskerDevice(PollingDevice):
         return await self._command(
             key, lambda r: r.reset_waste_drawer(), "reset_waste_drawer"
         )
+
+    async def reset(self, key: str) -> bool:
+        return await self._command(key, lambda r: r.reset(), "reset")
 
     async def set_night_light(self, key: str, on: bool) -> bool:
         robot = self._robots.get(key)
@@ -344,4 +386,29 @@ class WhiskerDevice(PollingDevice):
             return False
         return await self._command(
             key, lambda r: r.set_panel_brightness(level), "set_panel_brightness"
+        )
+
+    async def set_night_light_brightness(self, key: str, level_name: str) -> bool:
+        try:
+            level = BrightnessLevel[level_name]
+        except KeyError:
+            _LOG.error("[%s] Unknown night light brightness: %s", self.log_id, level_name)
+            return False
+        return await self._command(
+            key,
+            lambda r: r.set_night_light_brightness(level),
+            "set_night_light_brightness",
+        )
+
+    async def give_snack(self, key: str) -> bool:
+        return await self._command(key, lambda r: r.give_snack(), "give_snack")
+
+    async def set_gravity_mode(self, key: str, on: bool) -> bool:
+        return await self._command(
+            key, lambda r: r.set_gravity_mode(on), "set_gravity_mode"
+        )
+
+    async def set_meal_insert_size(self, key: str, size: float) -> bool:
+        return await self._command(
+            key, lambda r: r.set_meal_insert_size(size), "set_meal_insert_size"
         )

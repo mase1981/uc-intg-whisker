@@ -13,7 +13,7 @@ from typing import Any
 
 import aiohttp
 import certifi
-from pylitterbot import Account, LitterRobot3, LitterRobot4
+from pylitterbot import Account, FeederRobot, LitterRobot3, LitterRobot4
 from ucapi import RequestUserInput
 from ucapi_framework import BaseSetupFlow
 
@@ -85,11 +85,11 @@ class WhiskerSetupFlow(BaseSetupFlow[WhiskerConfig]):
             robots = [
                 r
                 for r in account.robots
-                if isinstance(r, (LitterRobot3, LitterRobot4))
+                if isinstance(r, (LitterRobot3, LitterRobot4, FeederRobot))
             ]
             if not robots:
                 raise ValueError(
-                    "No Litter-Robot devices were found on this Whisker account."
+                    "No Whisker devices were found on this account."
                 )
 
             user_id = getattr(account, "user_id", "") or username

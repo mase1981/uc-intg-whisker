@@ -30,12 +30,12 @@ If you find this integration useful, consider supporting development:
 Your support helps maintain this integration. Thank you! ❤️
 ---
 
-### 🐈 **Multi-Robot Support**
+### 🐈 **Multi-Device, Multi-Model Support**
 
-- **Automatic Discovery** - Every Litter-Robot on the account is added automatically
-- **Per-Robot Entities** - Each robot gets its own dedicated set of entities
-- **Litter-Robot 3 Connect** and **Litter-Robot 4** supported
-- **Model-Aware** - Litter-Robot 4 exposes extra controls (litter level, night light mode, panel brightness)
+- **Automatic Discovery** - Every Whisker device on the account is added automatically
+- **Per-Device Entities** - Each robot gets its own dedicated, model-appropriate set of entities
+- **Litter-Robot 3 Connect**, **Litter-Robot 4**, and **Feeder-Robot** supported
+- **Model-Aware** - Mirrors the Home Assistant integration: each model exposes exactly the controls it supports (e.g. Litter-Robot 4 adds litter level, pet weight, hopper status, night light mode/brightness, panel brightness; Feeder-Robot adds food level, feedings, give snack, gravity mode, meal insert size)
 
 ### 🎛️ **Remote Control Entity**
 
@@ -145,8 +145,9 @@ docker run -d --name uc-intg-whisker --restart unless-stopped --network host -v 
 3. Ensure your Remote has internet access
 
 #### Supported Devices:
-**Litter-Robot 3 Connect** - Full support
-**Litter-Robot 4** - Full support with additional controls (litter level, night light mode, panel brightness)
+**Litter-Robot 3 Connect** - Full support (status, waste drawer, cycle count, sleep, night light, panel lock, clean cycle, reset waste drawer, wait time)
+**Litter-Robot 4** - Full support plus litter level, pet weight, hopper status, night light mode/brightness, panel brightness, and reset
+**Feeder-Robot** - Food level, last/next feeding, give snack, night light, panel lock, gravity mode, and meal insert size
 
 ### Step 2: Setup Integration
 

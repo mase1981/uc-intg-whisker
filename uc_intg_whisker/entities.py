@@ -1,8 +1,9 @@
 """
-Entity factory for the Whisker Litter-Robot integration.
+Entity factory for the Whisker integration.
 
-Builds the full set of entities for every Litter-Robot discovered on the
-account after the device connection is established.
+Builds a model-appropriate set of entities for every robot discovered on the
+account, mirroring the per-model coverage of the Home Assistant Litter-Robot
+integration (Litter-Robot 3, Litter-Robot 4, Feeder-Robot).
 
 :copyright: (c) 2026 by Meir Miyara.
 :license: MPL-2.0, see LICENSE for more details.
@@ -15,17 +16,29 @@ from typing import TYPE_CHECKING
 
 from ucapi import Entity
 
-from uc_intg_whisker.button import ResetDrawerButton, StartCleaningButton
+from uc_intg_whisker.button import (
+    GiveSnackButton,
+    ResetButton,
+    ResetDrawerButton,
+    StartCleaningButton,
+)
 from uc_intg_whisker.remote import WhiskerRemote
 from uc_intg_whisker.select import (
+    MealInsertSizeSelect,
+    NightLightBrightnessSelect,
     NightLightModeSelect,
     PanelBrightnessSelect,
     WaitTimeSelect,
 )
 from uc_intg_whisker.sensor import (
     CycleCountSensor,
+    FoodLevelSensor,
+    HopperStatusSensor,
+    LastFeedingSensor,
     LastSeenSensor,
     LitterLevelSensor,
+    NextFeedingSensor,
+    PetWeightSensor,
     SleepEndSensor,
     SleepModeSensor,
     SleepStartSensor,
@@ -33,6 +46,7 @@ from uc_intg_whisker.sensor import (
     WasteDrawerSensor,
 )
 from uc_intg_whisker.switch import (
+    GravityModeSwitch,
     NightLightSwitch,
     PanelLockSwitch,
     PowerSwitch,
@@ -46,42 +60,70 @@ if TYPE_CHECKING:
 _LOG = logging.getLogger(__name__)
 
 
+def _litter_entities(cfg, dev, meta, is_lr4: bool) -> list[Entity]:
+    ents: list[Entity] = [
+        WhiskerRemote(cfg, dev, meta),
+        # Sensors (all litter robots)
+        StatusSensor(cfg, dev, meta),
+        WasteDrawerSensor(cfg, dev, meta),
+        CycleCountSensor(cfg, dev, meta),
+        SleepModeSensor(cfg, dev, meta),
+        SleepStartSensor(cfg, dev, meta),
+        SleepEndSensor(cfg, dev, meta),
+        LastSeenSensor(cfg, dev, meta),
+        # Switches (all litter robots)
+        PowerSwitch(cfg, dev, meta),
+        PanelLockSwitch(cfg, dev, meta),
+        SleepModeSwitch(cfg, dev, meta),
+        # Buttons / selects (all litter robots)
+        StartCleaningButton(cfg, dev, meta),
+        WaitTimeSelect(cfg, dev, meta),
+    ]
+    if is_lr4:
+        # Litter-Robot 4 extras
+        ents.append(LitterLevelSensor(cfg, dev, meta))
+        ents.append(PetWeightSensor(cfg, dev, meta))
+        ents.append(HopperStatusSensor(cfg, dev, meta))
+        ents.append(ResetButton(cfg, dev, meta))
+        ents.append(NightLightModeSelect(cfg, dev, meta))
+        ents.append(NightLightBrightnessSelect(cfg, dev, meta))
+        ents.append(PanelBrightnessSelect(cfg, dev, meta))
+    else:
+        # Litter-Robot 3: simple night light switch + waste drawer reset
+        ents.append(NightLightSwitch(cfg, dev, meta))
+        ents.append(ResetDrawerButton(cfg, dev, meta))
+    return ents
+
+
+def _feeder_entities(cfg, dev, meta) -> list[Entity]:
+    return [
+        WhiskerRemote(cfg, dev, meta),
+        FoodLevelSensor(cfg, dev, meta),
+        LastFeedingSensor(cfg, dev, meta),
+        NextFeedingSensor(cfg, dev, meta),
+        NightLightSwitch(cfg, dev, meta),
+        PanelLockSwitch(cfg, dev, meta),
+        GravityModeSwitch(cfg, dev, meta),
+        GiveSnackButton(cfg, dev, meta),
+        MealInsertSizeSelect(cfg, dev, meta),
+    ]
+
+
 def build_entities(
     device_config: WhiskerConfig, device: WhiskerDevice
 ) -> list[Entity]:
-    """Create all entities for every Litter-Robot on the account."""
+    """Create model-appropriate entities for every robot on the account."""
     entities: list[Entity] = []
     for meta in device.robot_metas:
-        # Remote entity (activity-friendly discrete commands)
-        entities.append(WhiskerRemote(device_config, device, meta))
+        kind = meta["kind"]
+        if kind == "feeder":
+            entities.extend(_feeder_entities(device_config, device, meta))
+        else:
+            entities.extend(
+                _litter_entities(device_config, device, meta, is_lr4=(kind == "lr4"))
+            )
 
-        # Sensors
-        entities.append(StatusSensor(device_config, device, meta))
-        entities.append(WasteDrawerSensor(device_config, device, meta))
-        if meta["has_litter_level"]:
-            entities.append(LitterLevelSensor(device_config, device, meta))
-        entities.append(CycleCountSensor(device_config, device, meta))
-        entities.append(SleepModeSensor(device_config, device, meta))
-        entities.append(SleepStartSensor(device_config, device, meta))
-        entities.append(SleepEndSensor(device_config, device, meta))
-        entities.append(LastSeenSensor(device_config, device, meta))
-
-        # Switches
-        entities.append(PowerSwitch(device_config, device, meta))
-        entities.append(NightLightSwitch(device_config, device, meta))
-        entities.append(PanelLockSwitch(device_config, device, meta))
-        entities.append(SleepModeSwitch(device_config, device, meta))
-
-        # Buttons
-        entities.append(StartCleaningButton(device_config, device, meta))
-        if meta["has_reset"]:
-            entities.append(ResetDrawerButton(device_config, device, meta))
-
-        # Selects
-        entities.append(WaitTimeSelect(device_config, device, meta))
-        if meta["is_lr4"]:
-            entities.append(NightLightModeSelect(device_config, device, meta))
-            entities.append(PanelBrightnessSelect(device_config, device, meta))
-
-    _LOG.info("Built %d entities for %d robot(s)", len(entities), len(device.robot_metas))
+    _LOG.info(
+        "Built %d entities for %d robot(s)", len(entities), len(device.robot_metas)
+    )
     return entities

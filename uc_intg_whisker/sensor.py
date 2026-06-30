@@ -139,3 +139,48 @@ class LastSeenSensor(_WhiskerSensor):
 
     def _value(self, snap: dict[str, Any]) -> Any:
         return snap["last_seen"]
+
+
+class PetWeightSensor(_WhiskerSensor):
+    _suffix = "pet_weight"
+    _label = "Pet Weight"
+    _unit = "lb"
+
+    def _value(self, snap: dict[str, Any]) -> Any:
+        return snap["pet_weight"]
+
+
+class HopperStatusSensor(_WhiskerSensor):
+    _suffix = "hopper"
+    _label = "Hopper Status"
+    _unit = ""
+
+    def _value(self, snap: dict[str, Any]) -> Any:
+        return snap["hopper_status"]
+
+
+class FoodLevelSensor(_WhiskerSensor):
+    _suffix = "food"
+    _label = "Food Level"
+    _unit = PERCENT_UNIT
+
+    def _value(self, snap: dict[str, Any]) -> Any:
+        return snap["food_level"]
+
+
+class LastFeedingSensor(_WhiskerSensor):
+    _suffix = "last_feeding"
+    _label = "Last Feeding"
+    _unit = ""
+
+    def _value(self, snap: dict[str, Any]) -> Any:
+        return snap["last_feeding"]
+
+
+class NextFeedingSensor(_WhiskerSensor):
+    _suffix = "next_feeding"
+    _label = "Next Feeding"
+    _unit = ""
+
+    def _value(self, snap: dict[str, Any]) -> Any:
+        return snap["next_feeding"]

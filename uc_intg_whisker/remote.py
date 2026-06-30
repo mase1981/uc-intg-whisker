@@ -1,8 +1,9 @@
 """
-Whisker Litter-Robot remote entity.
+Whisker remote entity.
 
 Aggregates a robot's discrete commands into a single Remote entity so they can
-be driven from Remote activities and custom UI pages.
+be driven from Remote activities and custom UI pages. The command set and UI
+adapt to the robot model (Litter-Robot 3/4 vs Feeder-Robot).
 
 :copyright: (c) 2026 by Meir Miyara.
 :license: MPL-2.0, see LICENSE for more details.
@@ -14,22 +15,26 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ucapi import StatusCodes, remote
-from ucapi.ui import Size, UiPage, create_btn_mapping, create_ui_text
-from ucapi.ui import Buttons
+from ucapi.ui import Buttons, Size, UiPage, create_btn_mapping, create_ui_text
 from ucapi_framework import RemoteEntity
 
 from uc_intg_whisker.const import (
-    BASE_REMOTE_COMMANDS,
+    CMD_GIVE_SNACK,
+    CMD_GRAVITY_OFF,
+    CMD_GRAVITY_ON,
     CMD_NIGHT_LIGHT_OFF,
     CMD_NIGHT_LIGHT_ON,
     CMD_PANEL_LOCK_OFF,
     CMD_PANEL_LOCK_ON,
     CMD_POWER_OFF,
     CMD_POWER_ON,
+    CMD_RESET,
     CMD_RESET_DRAWER,
     CMD_SLEEP_MODE_OFF,
     CMD_SLEEP_MODE_ON,
     CMD_START_CLEAN,
+    FEEDER_REMOTE_COMMANDS,
+    LITTER_REMOTE_COMMANDS,
 )
 
 if TYPE_CHECKING:
@@ -40,18 +45,38 @@ _LOG = logging.getLogger(__name__)
 
 
 class WhiskerRemote(RemoteEntity):
-    """Remote control surface for a single Litter-Robot."""
+    """Remote control surface for a single robot (model-aware)."""
 
     def __init__(
         self, device_config: WhiskerConfig, device: WhiskerDevice, meta: dict[str, Any]
     ) -> None:
         self._device = device
         self._key = meta["key"]
+        self._kind = meta["kind"]
 
-        commands = list(BASE_REMOTE_COMMANDS)
-        if meta["has_reset"]:
-            commands.append(CMD_RESET_DRAWER)
+        if self._kind == "feeder":
+            commands, ui_items, features, mapping = self._build_feeder()
+        else:
+            commands, ui_items, features, mapping = self._build_litter(meta)
 
+        entity_id = f"remote.{device_config.identifier}.{self._key}"
+        super().__init__(
+            entity_id,
+            f"{meta['name']} Remote",
+            features,
+            {remote.Attributes.STATE: remote.States.UNKNOWN},
+            simple_commands=commands,
+            button_mapping=mapping,
+            ui_pages=[UiPage("main", "Controls", grid=Size(4, 6), items=ui_items)],
+            cmd_handler=self._handle_command,
+        )
+        self.subscribe_to_device(device)
+
+    def _build_litter(self, meta: dict[str, Any]):
+        commands = list(LITTER_REMOTE_COMMANDS)
+        reset_cmd = CMD_RESET if meta["kind"] == "lr4" else CMD_RESET_DRAWER
+        reset_label = "Reset" if meta["kind"] == "lr4" else "Reset Waste Drawer"
+        commands.append(reset_cmd)
         ui_items = [
             create_ui_text("Power On", 0, 0, size=Size(2, 1), cmd=CMD_POWER_ON),
             create_ui_text("Power Off", 2, 0, size=Size(2, 1), cmd=CMD_POWER_OFF),
@@ -62,36 +87,41 @@ class WhiskerRemote(RemoteEntity):
             create_ui_text("Panel Lock Off", 2, 3, size=Size(2, 1), cmd=CMD_PANEL_LOCK_OFF),
             create_ui_text("Sleep Mode On", 0, 4, size=Size(2, 1), cmd=CMD_SLEEP_MODE_ON),
             create_ui_text("Sleep Mode Off", 2, 4, size=Size(2, 1), cmd=CMD_SLEEP_MODE_OFF),
+            create_ui_text(reset_label, 0, 5, size=Size(4, 1), cmd=reset_cmd),
         ]
-        if meta["has_reset"]:
-            ui_items.append(
-                create_ui_text(
-                    "Reset Waste Drawer", 0, 5, size=Size(4, 1), cmd=CMD_RESET_DRAWER
-                )
-            )
+        features = [
+            remote.Features.ON_OFF,
+            remote.Features.TOGGLE,
+            remote.Features.SEND_CMD,
+        ]
+        mapping = [
+            create_btn_mapping(Buttons.POWER, short=CMD_POWER_ON),
+            create_btn_mapping(Buttons.GREEN, short=CMD_START_CLEAN),
+        ]
+        return commands, ui_items, features, mapping
 
-        entity_id = f"remote.{device_config.identifier}.{self._key}"
-        super().__init__(
-            entity_id,
-            f"{meta['name']} Remote",
-            [remote.Features.ON_OFF, remote.Features.TOGGLE, remote.Features.SEND_CMD],
-            {remote.Attributes.STATE: remote.States.UNKNOWN},
-            simple_commands=commands,
-            button_mapping=[
-                create_btn_mapping(Buttons.POWER, short=CMD_POWER_ON),
-                create_btn_mapping(Buttons.GREEN, short=CMD_START_CLEAN),
-            ],
-            ui_pages=[
-                UiPage("main", "Litter-Robot", grid=Size(4, 6), items=ui_items),
-            ],
-            cmd_handler=self._handle_command,
-        )
-        self.subscribe_to_device(device)
+    def _build_feeder(self):
+        commands = list(FEEDER_REMOTE_COMMANDS)
+        ui_items = [
+            create_ui_text("Give Snack", 0, 0, size=Size(4, 1), cmd=CMD_GIVE_SNACK),
+            create_ui_text("Night Light On", 0, 1, size=Size(2, 1), cmd=CMD_NIGHT_LIGHT_ON),
+            create_ui_text("Night Light Off", 2, 1, size=Size(2, 1), cmd=CMD_NIGHT_LIGHT_OFF),
+            create_ui_text("Panel Lock On", 0, 2, size=Size(2, 1), cmd=CMD_PANEL_LOCK_ON),
+            create_ui_text("Panel Lock Off", 2, 2, size=Size(2, 1), cmd=CMD_PANEL_LOCK_OFF),
+            create_ui_text("Gravity On", 0, 3, size=Size(2, 1), cmd=CMD_GRAVITY_ON),
+            create_ui_text("Gravity Off", 2, 3, size=Size(2, 1), cmd=CMD_GRAVITY_OFF),
+        ]
+        features = [remote.Features.SEND_CMD]
+        mapping = [create_btn_mapping(Buttons.GREEN, short=CMD_GIVE_SNACK)]
+        return commands, ui_items, features, mapping
 
     async def sync_state(self) -> None:
         snap = self._device.robot_snapshot(self._key)
         if self._device.state == "UNAVAILABLE" or snap is None or not snap["online"]:
             self.update({remote.Attributes.STATE: remote.States.UNAVAILABLE})
+            return
+        if self._kind == "feeder":
+            self.update({remote.Attributes.STATE: remote.States.ON})
             return
         self.update(
             {
@@ -124,6 +154,14 @@ class WhiskerRemote(RemoteEntity):
             return await dev.set_sleep_mode(key, False)
         if command == CMD_RESET_DRAWER:
             return await dev.reset_waste_drawer(key)
+        if command == CMD_RESET:
+            return await dev.reset(key)
+        if command == CMD_GIVE_SNACK:
+            return await dev.give_snack(key)
+        if command == CMD_GRAVITY_ON:
+            return await dev.set_gravity_mode(key, True)
+        if command == CMD_GRAVITY_OFF:
+            return await dev.set_gravity_mode(key, False)
         return False
 
     async def _handle_command(
